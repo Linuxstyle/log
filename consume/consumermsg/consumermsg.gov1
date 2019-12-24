@@ -1,0 +1,64 @@
+package consumermsg
+
+import (
+    "context"
+    "eagle/consume/estool"
+    "github.com/Shopify/sarama"
+    "log"
+    "time"
+)
+
+type KafkaGroupConsumer struct{}
+
+var (
+    group  sarama.ConsumerGroup
+    client sarama.Client
+)
+
+func (KafkaGroupConsumer) Setup(_ sarama.ConsumerGroupSession) error   { return nil }
+func (KafkaGroupConsumer) Cleanup(_ sarama.ConsumerGroupSession) error { return nil }
+func (h KafkaGroupConsumer) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+    for msg := range claim.Messages() {
+        //fmt.Printf("Message topic:%q partition:%d offset:%d  Message Value: %s\n", msg.Topic, msg.Partition, msg.Offset, msg.Value)
+        sess.MarkMessage(msg, "")
+        estool.SendToEs(string(msg.Topic), string(msg.Value))
+    }
+    return nil
+}
+
+func Init(address string)(err error) {
+    //wg.Done()
+    //defer func() { _ = client.Close() }()
+    config := sarama.NewConfig()
+    config.Version = sarama.V1_0_0_0
+    config.Consumer.Offsets.Initial = sarama.OffsetOldest
+    config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRange
+    config.Consumer.Offsets.CommitInterval = 1 * time.Second
+
+    client, err = sarama.NewClient([]string{address}, config)
+    if err != nil {
+        log.Println("new  kafka client failed:", err)
+        return
+    }
+    return
+}
+func GetMsg(topic string){
+
+    group, err := sarama.NewConsumerGroupFromClient("log-consumer-agent", client)
+    if err != nil {
+        log.Println("kafka consumer new group failed: ", err)
+        return
+    }
+    //defer func() { _ = group.Close() }()
+    go func() {
+        for {
+            handler := KafkaGroupConsumer{}
+            //err := group.Consume(context.Background(), topics, handler)
+            err := group.Consume(context.Background(), []string{topic}, handler)
+            if err != nil {
+                log.Println("group consumer failed: ", err)
+                return
+            }
+        }
+    }()
+}

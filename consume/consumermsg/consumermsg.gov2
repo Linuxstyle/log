@@ -1,0 +1,46 @@
+package consumermsg
+
+import (
+    "eagle/consume/estool"
+    "gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
+    "log"
+)
+
+var (
+    client *kafka.Consumer
+)
+
+func Init(address string, topic string) {
+    config := kafka.ConfigMap{
+        "bootstrap.servers": address,
+        "group.id":          "log-consumer-agent",
+        "auto.offset.reset": "earliest",
+    }
+
+    client, err := kafka.NewConsumer(&config)
+    if err != nil {
+        log.Println("init kafka client faild err: ", err)
+        return
+    }
+    //}
+    //
+    //func GetMsg(topic string,wg sync.WaitGroup){
+    // defer client.Close()
+    err = client.Subscribe(topic, nil)
+    if err != nil {
+        log.Println("kafka client subscirbe topic failed: ", err)
+        return
+    }
+    for {
+        msg, err := client.ReadMessage(-1)
+        if err != nil {
+            log.Println("client read kafka message failed: ", err)
+            return
+        }
+        err = estool.SendToEs(topic, msg.String())
+        if err != nil {
+            log.Println(" read kafka message wirte to elastic failed  err: ", err)
+            return
+        }
+    }
+}
